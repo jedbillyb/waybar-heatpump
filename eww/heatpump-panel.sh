@@ -26,6 +26,7 @@ WIDTH=268       # the panel window's width; the panel is centred inside it, so
 eww ping >/dev/null 2>&1 || eww daemon >/dev/null 2>&1 || true
 
 TRACKER_PID="${XDG_RUNTIME_DIR:-/tmp}/waybar-heatpump.trackpid"
+XPOS="${XDG_RUNTIME_DIR:-/tmp}/waybar-heatpump.xpos"
 
 close_all() {
     [ -f "$TRACKER_PID" ] && kill "$(cat "$TRACKER_PID")" 2>/dev/null || true
@@ -56,12 +57,23 @@ if eww active-windows 2>/dev/null | grep -q '^heatpump'; then
     exit 0
 fi
 
-# The module's width comes from its own text, so pass it through.
-text=$(python3 "$HOME/.config/waybar/heatpump-status.py" 2>/dev/null \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin)["text"])' \
-        2>/dev/null || echo "hp")
-centre=$(python3 "$EWW_DIR/panel-position.py" "$text" 2>/dev/null || echo 1280)
-x=$(( centre - WIDTH / 2 ))
+# Measuring where the module sits costs ~180ms - a grim capture, a PIL import
+# and a couple of interpreter starts - and that is most of the gap between the
+# click and the panel appearing. The answer is almost always what it was last
+# time, so open at the remembered position immediately and let the tracker
+# correct it; only the first open after a reboot pays for the measurement.
+#
+# When it is wrong it is wrong by a few pixels (the module's own text changed
+# width, e.g. "hp off" -> "hp 21°C"), and the tracker measures straight away
+# rather than after its first interval, so the correction lands in ~200ms.
+if ! x=$(cat "$XPOS" 2>/dev/null) || [ -z "$x" ]; then
+    # The module's width comes from its own text, so pass it through.
+    text=$(python3 "$HOME/.config/waybar/heatpump-status.py" 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["text"])' \
+            2>/dev/null || echo "hp")
+    centre=$(python3 "$EWW_DIR/panel-position.py" "$text" 2>/dev/null || echo 1280)
+    x=$(( centre - WIDTH / 2 ))
+fi
 [ "$x" -lt 0 ] && x=0
 
 eww open heatpump-backdrop

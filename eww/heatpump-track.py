@@ -23,6 +23,8 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
+XPOS = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"),
+                    "waybar-heatpump.xpos")
 INTERVAL = 1.5
 WIDTH = 268         # the panel window's width; the panel is centred inside it,
                     # so centring the window centres the panel on the module
@@ -53,11 +55,28 @@ def panel_open():
     return "heatpump:" in windows or "heatpump-edit:" in windows
 
 
+def remember(x):
+    """Record the position so the next open can skip the measurement."""
+    try:
+        with open(XPOS, "w") as fh:
+            fh.write("%d\n" % x)
+    except OSError:
+        pass
+
+
 def main():
     applied = int(sys.argv[1]) if len(sys.argv) > 1 else None
 
+    # First pass runs immediately, not after INTERVAL: the panel has just been
+    # opened at a remembered position that may be a few pixels stale, and that
+    # is exactly the moment someone is looking at it.
+    first = True
+
     while True:
-        time.sleep(INTERVAL)
+        if not first:
+            time.sleep(INTERVAL)
+        first = False
+
         if not panel_open():
             return
 
@@ -65,6 +84,8 @@ def main():
             x = measure()
         except (ValueError, OSError, subprocess.SubprocessError):
             continue
+
+        remember(x)
 
         if applied is not None and abs(x - applied) <= JITTER:
             continue

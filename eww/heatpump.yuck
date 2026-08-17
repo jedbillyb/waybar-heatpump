@@ -10,8 +10,9 @@
 ; where the module actually is - waybar exposes no geometry, and the module
 ; drifts as the modules to its right change width.
 ;
-; The amber rule across the top is the width of the module's own text, so the
-; panel visibly hangs off it.
+; It carries no accent stripe: sharing waybar's exact background and sitting
+; flush against it is enough to read as attached, and a coloured stub on top
+; of that just looked stuck on.
 
 (deflisten hp
   :initial `{"ok":false,"reason":"connecting","fanbars":[],"modes":[]}`
@@ -40,7 +41,6 @@
 
 (defwidget hp-body [xpos editing]
   (box :orientation "v" :space-evenly false :halign "start"
-    (box :class "hp-tab" :halign "start")
     (box :class "hp-panel" :orientation "v" :space-evenly false
 
       (box :class "hp-head" :orientation "h" :space-evenly false

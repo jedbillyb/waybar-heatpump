@@ -28,15 +28,6 @@ $hair:    rgba(255, 255, 255, 0.07);
   font-size: 11px;
 }
 
-// The stub that ties the panel to the module it came out of: an amber rule
-// the width of the module's own text, sitting flush against the bar.
-.hp-tab {
-  background-color: $amber;
-  min-height: 2px;
-  min-width: 36px;
-  margin-left: 14px;    // line the stub up with the module's text, not the
-}                       // panel's edge - the panel carries 14px of padding
-
 .hp-head {
   margin-bottom: 2px;
 }

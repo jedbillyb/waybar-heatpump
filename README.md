@@ -24,10 +24,11 @@ Mode       heat
 Setpoint   31°C
 Room       22°C
 Outdoor    5°C
-Fan        6/8
+Fan        6/6
 Lifetime   1586.8 kWh
 
 click: power   scroll: setpoint
+right: fan     middle: fan auto
 ```
 
 ## Usage
@@ -38,6 +39,11 @@ heatpump-status.py toggle     power on/off
 heatpump-status.py warmer     setpoint +1
 heatpump-status.py cooler     setpoint -1
 heatpump-status.py mode heat|cool|dry|fan|auto
+heatpump-status.py fanup      fan speed +1
+heatpump-status.py fandown    fan speed -1
+heatpump-status.py fancycle   auto -> 1 -> ... -> max -> auto
+heatpump-status.py fan 1-8|auto
+heatpump-status.py calibrate  find the unit's real top fan speed
 heatpump-status.py dump       every readable property, decoded
 heatpump-status.py discover   find ECHONET Lite nodes on the LAN
 ```
@@ -68,6 +74,8 @@ what it finds, if you'd rather pin the address in the config file.
     "on-click": "~/.config/waybar/heatpump-status.py toggle",
     "on-scroll-up": "~/.config/waybar/heatpump-status.py warmer",
     "on-scroll-down": "~/.config/waybar/heatpump-status.py cooler",
+    "on-click-right": "~/.config/waybar/heatpump-status.py fancycle",
+    "on-click-middle": "~/.config/waybar/heatpump-status.py fan auto",
     "tooltip": true
 }
 ```
@@ -78,9 +86,50 @@ is actually doing. Control commands invalidate the cache and push
 `SIGRTMIN+12` so the bar updates immediately instead of waiting out the poll
 interval.
 
+Left click toggles power, scroll changes the setpoint, right click cycles fan
+speed (auto → 1 → … → max → auto), middle click returns the fan to auto.
+
 Setpoint changes are clamped to 16–31°C. The device will happily accept 0–50
 over the wire; that range is a guard against a stray scroll setting something
-absurd.
+absurd. Note that scroll bindings on a bar module are easy to trigger by
+accident — a scroll gesture that happens to land on the module will walk the
+setpoint to one end of that range. If that bothers you, drop the two
+`on-scroll-*` lines and drive the setpoint from the CLI.
+
+## Fan speed
+
+ECHONET Lite defines eight fan levels (`0x31`–`0x38` in EPC `0xA0`) plus auto,
+but units implement fewer, and **a set above what the unit supports is not
+rejected** — it returns `Set_Res` like any other write and is then silently
+ignored. The Mitsubishi this was written against tops out at 6.
+
+So the ceiling has to be measured, not assumed:
+
+```
+heatpump-status.py calibrate
+```
+
+That walks down from level 8, writing and reading back each one until it
+finds the highest that sticks, restores the fan to where it was, and records
+`fan_max` in `~/.config/waybar/heatpump.conf`. Run it once per unit. Without
+it the module assumes 8 and the top couple of steps will appear to do
+nothing.
+
+`fanup`/`fandown` step through the levels and treat auto as the step below
+level 1, so nudging up off auto lands on the slowest manual speed rather than
+jumping into the middle of the range.
+
+## Config file
+
+`~/.config/waybar/heatpump.conf`, `key = value` per line. A bare line is read
+as the IP, so the minimal file is just an address.
+
+```
+ip = 192.168.68.50
+fan_max = 6
+```
+
+`$HEATPUMP_IP` and `$HEATPUMP_FAN_MAX` override the file.
 
 ## Protocol notes
 

@@ -6,6 +6,11 @@
     heatpump-status.py warmer     setpoint +1
     heatpump-status.py cooler     setpoint -1
     heatpump-status.py mode heat|cool|dry|fan|auto
+    heatpump-status.py fanup      fan speed +1
+    heatpump-status.py fandown    fan speed -1
+    heatpump-status.py fancycle   auto -> 1 -> ... -> 8 -> auto
+    heatpump-status.py fan 1-8|auto
+    heatpump-status.py calibrate  find the unit's real top fan speed
     heatpump-status.py dump       every readable property, decoded
     heatpump-status.py discover   find ECHONET nodes on the LAN
 
@@ -41,21 +46,58 @@ MODE_BYTES = {v: k for k, v in MODES.items()}
 
 SETPOINT_MIN, SETPOINT_MAX = 16, 31
 
+# EPC 0xA0 encodes fan levels 1-8 as 0x31-0x38, but a given unit only
+# implements some of them and silently ignores a set above its ceiling (this
+# Mitsubishi tops out at 6). `calibrate` finds the real ceiling and writes it
+# to the config file; until then assume the spec maximum.
+FAN_MIN, FAN_SPEC_MAX = 1, 8
+FAN_AUTO = 0x41
+
 
 # --- helpers ---------------------------------------------------------------
 
-def device_ip():
-    ip = os.environ.get("HEATPUMP_IP")
-    if ip:
-        return ip
+def read_conf():
+    """`key = value` lines. A bare line is taken as the IP, so the simplest
+    possible config file is just an address."""
+    conf = {}
     try:
         with open(CONF) as f:
             for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    return line
+                line = line.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    conf[k.strip()] = v.strip()
+                else:
+                    conf.setdefault("ip", line)
     except OSError:
         pass
+    return conf
+
+
+def write_conf(**fields):
+    conf = read_conf()
+    conf.update({k: str(v) for k, v in fields.items()})
+    os.makedirs(os.path.dirname(CONF), exist_ok=True)
+    with open(CONF, "w") as f:
+        f.write("# waybar-heatpump device config\n")
+        for k, v in sorted(conf.items()):
+            f.write("%s = %s\n" % (k, v))
+
+
+def fan_max():
+    v = os.environ.get("HEATPUMP_FAN_MAX") or read_conf().get("fan_max")
+    try:
+        return max(FAN_MIN, min(FAN_SPEC_MAX, int(v)))
+    except (TypeError, ValueError):
+        return FAN_SPEC_MAX
+
+
+def device_ip():
+    ip = os.environ.get("HEATPUMP_IP") or read_conf().get("ip")
+    if ip:
+        return ip
     try:
         if time.time() - os.path.getmtime(IPCACHE) < 3600:
             with open(IPCACHE) as f:
@@ -90,13 +132,20 @@ def setpoint(raw):
 
 
 def fan(raw):
+    """Returns "auto", an int level 1-8, or None if unsupported/unknown."""
     if not raw:
         return None
     if raw[0] == 0x41:
         return "auto"
-    if 0x31 <= raw[0] <= 0x38:
-        return "%d/8" % (raw[0] - 0x30)
+    if FAN_MIN <= raw[0] - 0x30 <= FAN_SPEC_MAX:
+        return raw[0] - 0x30
     return None
+
+
+def fan_text(value):
+    if value is None:
+        return None
+    return "auto" if value == "auto" else "%d/%d" % (value, fan_max())
 
 
 def read_state(ip):
@@ -150,9 +199,26 @@ def cached_state(ip, max_age=CACHE_TTL):
         lockf.close()
 
 
-def invalidate():
+def patch_cache(**fields):
+    """Record what we just told the device, rather than dropping the cache.
+
+    The unit takes a second or two to reflect a write in its own properties,
+    so a re-read straight after a set returns the *old* value. Without this,
+    holding a scroll would keep reading the stale setpoint and stop
+    advancing. Writing our intent through also makes the bar update instantly.
+    """
     try:
-        os.unlink(CACHE)
+        with open(CACHE) as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        return
+    st.update(fields)
+    st["ts"] = time.time()
+    try:
+        tmp = CACHE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(st, f)
+        os.replace(tmp, CACHE)
     except OSError:
         pass
 
@@ -189,14 +255,15 @@ def status():
         lines.append("Room       %d°C" % st["room"])
     if st["outdoor"] is not None:
         lines.append("Outdoor    %d°C" % st["outdoor"])
-    if st["fan"]:
-        lines.append("Fan        %s" % st["fan"])
+    if st["fan"] is not None:
+        lines.append("Fan        %s" % fan_text(st["fan"]))
     if st["energy_kwh"] is not None:
         lines.append("Lifetime   %.1f kWh" % st["energy_kwh"])
     if st["fault"]:
         lines.append("")
         lines.append("FAULT reported")
-    lines += ["", "click: power   scroll: setpoint"]
+    lines += ["", "click: power   scroll: setpoint",
+                  "right: fan     middle: fan auto"]
     tooltip = "\n".join(lines)
 
     if st["fault"]:
@@ -212,22 +279,72 @@ def status():
 
 def toggle():
     ip = device_ip()
-    st = cached_state(ip, max_age=0)
-    el.set_prop(ip, EPC_POWER, bytes([0x31 if st["on"] else 0x30]))
-    invalidate()
+    st = cached_state(ip)
+    new = not st["on"]
+    el.set_prop(ip, EPC_POWER, bytes([0x30 if new else 0x31]))
+    patch_cache(on=new)
     nudge_waybar()
 
 
 def bump(delta):
     ip = device_ip()
-    st = cached_state(ip, max_age=0)
+    st = cached_state(ip)
     if st["setpoint"] is None:
-        return
+        sys.exit("device did not report a setpoint")
     new = max(SETPOINT_MIN, min(SETPOINT_MAX, st["setpoint"] + delta))
     if new != st["setpoint"]:
         el.set_prop(ip, EPC_SETPOINT, bytes([new]))
-        invalidate()
+        patch_cache(setpoint=new)
         nudge_waybar()
+
+
+def write_fan(ip, value):
+    """value is "auto" or an int level."""
+    raw = FAN_AUTO if value == "auto" else 0x30 + value
+    el.set_prop(ip, EPC_FAN, bytes([raw]))
+    patch_cache(fan=value)
+    nudge_waybar()
+
+
+def set_fan(arg):
+    if arg == "auto":
+        value = "auto"
+    else:
+        try:
+            value = int(arg)
+        except ValueError:
+            sys.exit("fan takes %d-%d or 'auto'" % (FAN_MIN, fan_max()))
+        if not FAN_MIN <= value <= fan_max():
+            sys.exit("fan level must be %d-%d" % (FAN_MIN, fan_max()))
+    write_fan(device_ip(), value)
+
+
+def bump_fan(delta):
+    """Auto counts as the step below level 1, so nudging up off auto lands on
+    the slowest manual speed rather than jumping to the middle of the range."""
+    ip = device_ip()
+    current = cached_state(ip)["fan"]
+    if current is None:
+        sys.exit("device did not report a fan speed")
+    if current == "auto":
+        new = FAN_MIN if delta > 0 else "auto"
+    else:
+        level = current + delta
+        new = "auto" if level < FAN_MIN else min(level, fan_max())
+    if new != current:
+        write_fan(ip, new)
+
+
+def cycle_fan():
+    ip = device_ip()
+    current = cached_state(ip)["fan"]
+    if current is None:
+        sys.exit("device did not report a fan speed")
+    if current == "auto":
+        new = FAN_MIN
+    else:
+        new = "auto" if current >= fan_max() else current + 1
+    write_fan(ip, new)
 
 
 def set_mode(name):
@@ -236,6 +353,47 @@ def set_mode(name):
     el.set_prop(device_ip(), EPC_MODE, bytes([MODE_BYTES[name]]))
     invalidate()
     nudge_waybar()
+
+
+def calibrate():
+    """Find the highest fan level this unit actually honours.
+
+    A set above the ceiling is accepted at the protocol level - the device
+    returns Set_Res, not Set_SNA - and then quietly ignored, so the only way
+    to tell is to write a value and read it back. Walks down from the spec
+    maximum, restores the original speed, and records the result in the
+    config file.
+    """
+    ip = device_ip()
+    if not ip:
+        sys.exit("no heat pump found")
+    original = fan(el.get(ip, [EPC_FAN]).get(EPC_FAN))
+    if original is None:
+        sys.exit("device did not report a fan speed")
+    print("current fan: %s" % ("auto" if original == "auto" else original))
+
+    ceiling = FAN_MIN
+    for level in range(FAN_SPEC_MAX, FAN_MIN - 1, -1):
+        el.set_prop(ip, EPC_FAN, bytes([0x30 + level]))
+        time.sleep(3)       # the unit takes a beat to apply a change
+        if fan(el.get(ip, [EPC_FAN]).get(EPC_FAN)) == level:
+            ceiling = level
+            print("  level %d: honoured" % level)
+            break
+        print("  level %d: ignored" % level)
+
+    raw = FAN_AUTO if original == "auto" else 0x30 + original
+    el.set_prop(ip, EPC_FAN, bytes([raw]))
+    invalidate_cache()
+    write_conf(ip=ip, fan_max=ceiling)
+    print("\nfan_max = %d, written to %s" % (ceiling, CONF))
+
+
+def invalidate_cache():
+    try:
+        os.unlink(CACHE)
+    except OSError:
+        pass
 
 
 # --- diagnostics -----------------------------------------------------------
@@ -277,7 +435,7 @@ def describe(epc, raw):
         label = "room" if epc == EPC_ROOM else "outdoor"
         return "%s: %s" % (label, "%d°C" % v if v is not None else "n/a")
     if epc == EPC_FAN:
-        return "fan: %s" % (fan(raw) or "?")
+        return "fan: %s" % (fan_text(fan(raw)) or "?")
     if epc == EPC_FAULT:
         return "fault: %s" % ("YES" if raw[0] == 0x41 else "no")
     if epc == EPC_ENERGY and len(raw) == 4:
@@ -311,6 +469,16 @@ def main():
             bump(-1)
         elif cmd == "mode":
             set_mode(sys.argv[2] if len(sys.argv) > 2 else "")
+        elif cmd == "fan":
+            set_fan(sys.argv[2] if len(sys.argv) > 2 else "")
+        elif cmd == "fanup":
+            bump_fan(+1)
+        elif cmd == "fandown":
+            bump_fan(-1)
+        elif cmd == "fancycle":
+            cycle_fan()
+        elif cmd == "calibrate":
+            calibrate()
         elif cmd == "dump":
             dump()
         elif cmd == "discover":

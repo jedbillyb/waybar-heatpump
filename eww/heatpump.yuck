@@ -1,13 +1,17 @@
 ; heat pump — control panel for the ECHONET Lite aircon.
 ;
-; Included from eww.yuck. The listener only runs while the window is open, so
+; Included from eww.yuck. The listener runs only while the window is open, so
 ; nothing polls the device when the panel is closed.
 ;
-; Every button shells out to heatpump-status.py, which writes the value it
-; sent into the shared cache and touches the poke file. The listener sees the
-; poke and redraws, so a press lands on screen immediately rather than after
-; the unit has caught up (it takes a second or two to reflect a change in its
-; own properties).
+; The panel is meant to read as the bar continuing downwards rather than as a
+; floating card: same background and font as waybar, square corners, flush
+; against the bar's bottom edge, and left-aligned with the module that opened
+; it. `xpos` comes from panel-position.py, which measures the bar to find
+; where the module actually is - waybar exposes no geometry, and the module
+; drifts as the modules to its right change width.
+;
+; The amber rule across the top is the width of the module's own text, so the
+; panel visibly hangs off it.
 
 (deflisten hp
   :initial `{"ok":false,"reason":"connecting","fanbars":[],"modes":[]}`
@@ -17,76 +21,108 @@
 
 ;; ── pieces ──────────────────────────────────────────────────────────────────
 
-(defwidget hp-power []
-  (eventbox :cursor "pointer" :onclick "${HP} toggle"
-    (box :class "hp-pill ${hp.on ? "on" : "off"}"
-         :orientation "h" :space-evenly false :spacing 6 :halign "end"
-      (label :class "hp-dot" :text "●")
-      (label :class "hp-pilltext" :text {hp.power_text}))))
-
-; The setpoint sits between its two steppers rather than under them, so the
-; number you are changing is the thing your eye is already on.
-(defwidget hp-dial []
-  (box :class "hp-dial" :orientation "h" :space-evenly false :spacing 14
-       :halign "center"
-    (eventbox :cursor "pointer" :onclick "${HP} cooler"
-      (label :class "hp-step" :text "−"))
-    (box :class "hp-readout" :orientation "v" :space-evenly false :spacing 0
-      (label :class "hp-setpoint" :text {hp.setpoint_text})
-      (label :class "hp-room" :text {hp.room_text}))
-    (eventbox :cursor "pointer" :onclick "${HP} warmer"
-      (label :class "hp-step" :text "+"))))
+(defwidget hp-reading [label value]
+  (box :class "hp-reading" :orientation "h" :space-evenly false
+    (label :class "hp-key" :text label :xalign 0 :hexpand true)
+    (label :class "hp-val" :text value :xalign 1)))
 
 (defwidget hp-mode [m]
-  (eventbox :cursor "pointer" :onclick "${HP} mode ${m.name}"
-    (label :class "hp-mode ${m.active ? "active" : ""}" :text {m.name})))
+  (eventbox :cursor "pointer" :onclick "${HP} mode ${m.name}" :hexpand true
+    (label :class "hp-word ${m.active ? "active" : ""}" :text {m.name})))
 
-; Clicking segment n sets speed n outright, which is quicker than stepping,
-; and the filled run doubles as the level readout.
-(defwidget hp-fanbar [b]
+; Clicking segment n sets speed n outright - quicker than stepping, and the
+; filled run doubles as the readout.
+(defwidget hp-seg [b]
   (eventbox :cursor "pointer" :onclick "${HP} fan ${b.level}"
     (label :class "hp-seg ${b.filled ? "filled" : ""}" :text "▊")))
 
-(defwidget hp-fan []
-  (box :class "hp-fanrow" :orientation "h" :space-evenly false :spacing 10
-    (label :class "hp-label" :text "fan")
-    (box :orientation "h" :space-evenly false :spacing 2
-      (for b in {hp.fanbars} (hp-fanbar :b b)))
-    (label :class "hp-fantext" :text {hp.fan_text} :hexpand true :xalign 0)
-    (eventbox :cursor "pointer" :onclick "${HP} fan auto"
-      (label :class "hp-mode ${hp.fan_auto ? "active" : ""}" :text "auto"))))
-
 ;; ── the panel ───────────────────────────────────────────────────────────────
 
-(defwidget hp-body []
-  (box :class "hp-panel" :orientation "v" :space-evenly false :spacing 0
-    (box :class "hp-head" :orientation "h" :space-evenly false
-      (label :class "hp-title" :text "Heat pump" :xalign 0 :hexpand true)
-      (hp-power))
+(defwidget hp-body [xpos editing]
+  (box :orientation "v" :space-evenly false :halign "start"
+    (box :class "hp-tab" :halign "start")
+    (box :class "hp-panel" :orientation "v" :space-evenly false
 
-    ; One failure box instead of a panel full of dashes - if the device is
-    ; unreachable there is nothing meaningful to draw or press.
-    (box :visible {hp.ok == false} :class "hp-down" :orientation "v"
-         :space-evenly false
-      (label :class "hp-downtext" :text {hp.reason ?: "unreachable"}))
+      (box :class "hp-head" :orientation "h" :space-evenly false
+        (label :class "hp-title" :text "hp" :xalign 0 :hexpand true)
+        (label :class "hp-power ${hp.on ? "on" : "off"}"
+               :text {hp.power_text ?: ""} :xalign 1))
 
-    (box :visible {hp.ok} :orientation "v" :space-evenly false :spacing 0
-      (hp-dial)
-      (box :class "hp-modes" :orientation "h" :space-evenly true :spacing 6
-        (for m in {hp.modes} (hp-mode :m m)))
-      (hp-fan)
-      (box :class "hp-foot" :orientation "h" :space-evenly false
-        (label :class "hp-dim" :text {hp.outdoor_text} :xalign 0 :hexpand true)
-        (label :class "hp-dim" :text {hp.energy_text} :xalign 1))
-      (label :class "hp-fault" :visible {hp.fault} :text "fault reported"))))
+      ; Nothing worth drawing or pressing if the unit is unreachable.
+      (box :visible {hp.ok == false} :class "hp-down"
+        (label :class "hp-key" :text {hp.reason ?: "unreachable"} :xalign 0))
 
-; Anchored top-right under waybar, roughly beneath the module that opens it.
-; "ov" so it floats above windows, focusable so Escape can close it.
-(defwindow heatpump
+      (box :visible {hp.ok} :orientation "v" :space-evenly false
+
+        (box :class "hp-dial" :orientation "h" :space-evenly false :spacing 0
+             :halign "center"
+          (eventbox :cursor "pointer" :onclick "${HP} cooler"
+            (label :class "hp-step" :text "−"))
+          ; Click the number to type a temperature.
+          ;
+          ; eww 0.5 has only exclusive keyboard focus - a focusable window
+          ; swallows every keystroke on the system while it is open - so the
+          ; panel itself must not be focusable, or you cannot type anywhere
+          ; else on the desktop. Editing therefore swaps to an identical but
+          ; focusable window, which holds the keyboard only while you type.
+          (box :class "hp-target" :orientation "v" :space-evenly false
+            (box :orientation "h" :space-evenly false :halign "center"
+              (input :class "hp-big hp-entry" :visible editing :hexpand false
+                     :xalign 0.5
+                     :value {hp.setpoint_input}
+                     :onaccept "${HP} settemp {} && ~/.config/eww/heatpump-panel.sh --show ${xpos}")
+              (eventbox :visible {editing == false} :cursor "text"
+                        :onclick "~/.config/eww/heatpump-panel.sh --edit ${xpos}"
+                (label :class "hp-big" :text {hp.setpoint_text})))
+            (eventbox :visible editing :cursor "pointer"
+                      :onclick "~/.config/eww/heatpump-panel.sh --show ${xpos}"
+              (label :class "hp-caption" :text "enter to set"))
+            (label :class "hp-caption" :visible {editing == false}
+                   :text "target"))
+          (eventbox :cursor "pointer" :onclick "${HP} warmer"
+            (label :class "hp-step" :text "+")))
+
+        (box :class "hp-rule")
+
+        (box :class "hp-readings" :orientation "v" :space-evenly false
+          (hp-reading :label "room"    :value {hp.room_temp})
+          (hp-reading :label "outside" :value {hp.outdoor_temp}))
+
+        (box :class "hp-rule")
+
+        (box :class "hp-row" :orientation "h" :space-evenly false
+          (label :class "hp-key" :text "mode")
+          (box :orientation "h" :space-evenly true :spacing 2 :hexpand true
+            (for m in {hp.modes} (hp-mode :m m))))
+
+        (box :class "hp-row" :orientation "h" :space-evenly false :spacing 0
+          (label :class "hp-key" :text "fan")
+          (box :class "hp-bars" :orientation "h" :space-evenly false :spacing 2
+            (for b in {hp.fanbars} (hp-seg :b b)))
+          (label :class "hp-val" :text {hp.fan_text} :hexpand true :xalign 0)
+          (eventbox :cursor "pointer" :onclick "${HP} fan auto"
+            (label :class "hp-word ${hp.fan_auto ? "active" : ""}"
+                   :text "auto")))
+
+        (label :class "hp-fault" :visible {hp.fault} :text "fault reported"
+               :xalign 0)))))
+
+(defwindow heatpump [xpos]
+  :monitor 0
+  :stacking "ov"
+  :focusable false          ; see the comment on the target above
+  :geometry (geometry :x "${xpos}px" :y "0px"
+                      :width "268px"
+                      :anchor "top left")
+  (hp-body :xpos xpos :editing false))
+
+
+; The focusable twin of the panel, shown only while typing a temperature.
+(defwindow heatpump-edit [xpos]
   :monitor 0
   :stacking "ov"
   :focusable true
-  :geometry (geometry :x "12px" :y "6px"
-                      :width "300px"
-                      :anchor "top right")
-  (hp-body))
+  :geometry (geometry :x "${xpos}px" :y "0px"
+                      :width "268px"
+                      :anchor "top left")
+  (hp-body :xpos xpos :editing true))

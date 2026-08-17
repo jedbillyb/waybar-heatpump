@@ -17,37 +17,101 @@ hp 22°C
 Tooltip:
 
 ```
-Heat pump  192.168.68.50
-
 Power      on
 Mode       heat
-Setpoint   31°C
+Target     31°C
 Room       22°C
-Outdoor    5°C
+Outside    5°C
 Fan        6/6
-Lifetime   1586.8 kWh
 
 click: panel   right: power
 ```
 
 ## The panel
 
-Left click on the bar module opens an eww control panel: setpoint with big
-steppers, the current room temperature under it, mode buttons, a clickable
-fan bar, and outdoor temperature plus lifetime energy in the footer. Right
-click on the module still toggles power without opening anything.
+Left click on the bar module opens an eww control panel; right click toggles
+power without opening anything.
 
-Files live in `eww/` and are symlinked into `~/.config/eww`, with
-`(include "heatpump.yuck")` in `eww.yuck` and `@import "heatpump";` in
-`eww.scss`. Everything is namespaced `.hp-*` because eww applies one
-stylesheet to every window.
+It is deliberately not a floating card. It uses waybar's exact background
+(`rgba(36,36,36,0.85)`, translucency included), the same font and palette,
+square corners, sits flush against the bar's bottom edge, and carries an amber
+stub the width of the module's own text so it visibly hangs off the thing that
+opened it.
 
-The panel's listener only runs while the window is open, so nothing polls the
-device the rest of the time. It reads through the same cache and flock as the
-waybar module rather than talking to the unit itself — two ECHONET pollers at
-once would steal each other's replies. Control actions patch the cache with
-the value they sent and touch a poke file that the listener watches, so a
-button press redraws immediately rather than waiting for the unit to catch up.
+The target temperature is click-to-type: click the number, type a value, press
+Enter. The steppers are still there for a quick nudge.
+
+```
+ hp                        on
+
+        −     31°     +
+              target
+ ────────────────────────────
+ room                     22°
+ outside                   5°
+ ────────────────────────────
+ mode    heat  cool  dry  fan
+ fan     ▊▊▊▊▊▊  6/6    auto
+```
+
+### Positioning
+
+The panel's x position is measured at open time, not hardcoded. The heat pump
+module is the leftmost entry in `modules-right`, so it slides sideways
+whenever anything to its right changes width - the wifi percentage alone moves
+it several pixels.
+
+`panel-position.py` grabs the top strip of the screen, marks every column
+carrying a glyph, and takes the content starting after the widest gap in the
+right half of the bar. That gap is the space between the centred clock and the
+right-hand group; inter-module spacing is much narrower.
+
+Two approaches that don't work, for the next person:
+
+- **Sampling the bar's background colour.** waybar is translucent, so its
+  "background" is the wallpaper underneath and differs at every x. A luminance
+  threshold picks out text regardless of what is behind it.
+- **Matching the module's own colour.** It changes with the mode, and the greys
+  it uses when off are shared with other modules.
+
+### Keyboard focus, and why there are two windows
+
+eww 0.5 exposes keyboard focus as a single boolean, which maps to layer-shell
+`exclusive`. There is no on-demand mode. An exclusive layer surface takes
+**every keystroke on the system** for as long as it is open - so a focusable
+panel left open means you cannot type in your editor, your terminal, or
+anywhere else.
+
+That rules out simply making the panel focusable so its entry works. Instead
+there are two windows sharing one widget: `heatpump` is not focusable and is
+what you leave open, and `heatpump-edit` is the identical panel with the
+target swapped for an entry. Clicking the number swaps one for the other, and
+Enter applies the value and swaps back, so the keyboard is held only while you
+are actually typing.
+
+If eww is ever updated past 0.6, `:focusable "ondemand"` collapses this back
+into a single window.
+
+### Live updates
+
+The listener runs only while the panel is open, so nothing polls the device
+the rest of the time. It reads through the same cache and flock as the waybar
+module rather than talking to the unit itself - two ECHONET pollers at once
+would steal each other's replies. Control actions patch the cache with the
+value they sent and touch a poke file the listener watches, so a button press
+redraws immediately instead of waiting for the unit to catch up.
+
+## Temperatures
+
+The panel and the tooltip show every temperature this unit reports, which is
+all three of them: target, room and outside. Probing the rest of the aircon
+class turned up nothing else - no humidity (`0xBA`), no coil or discharge
+temperatures, and no instantaneous power (`0x84`).
+
+Lifetime energy (`0x85`) is read but no longer displayed. It is a cumulative
+counter that only moves in 0.1 kWh steps, so it says nothing useful about what
+the unit is doing right now. It is still handy from `dump` when you want to
+know whether the unit is drawing power at all.
 
 ## Usage
 

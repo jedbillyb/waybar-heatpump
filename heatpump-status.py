@@ -258,25 +258,21 @@ def status():
         emit("hp --", "unreachable", "%s: %s" % (ip, e))
         return
 
-    lines = ["Heat pump  %s" % ip, ""]
-    lines.append("Power      %s" % ("on" if st["on"] else "off"))
+    lines = ["Power      %s" % ("on" if st["on"] else "off")]
     if st["mode"]:
         lines.append("Mode       %s" % st["mode"])
     if st["setpoint"] is not None:
-        lines.append("Setpoint   %d°C" % st["setpoint"])
+        lines.append("Target     %d°C" % st["setpoint"])
     if st["room"] is not None:
         lines.append("Room       %d°C" % st["room"])
     if st["outdoor"] is not None:
-        lines.append("Outdoor    %d°C" % st["outdoor"])
+        lines.append("Outside    %d°C" % st["outdoor"])
     if st["fan"] is not None:
         lines.append("Fan        %s" % fan_text(st["fan"]))
-    if st["energy_kwh"] is not None:
-        lines.append("Lifetime   %.1f kWh" % st["energy_kwh"])
     if st["fault"]:
         lines.append("")
         lines.append("FAULT reported")
-    lines += ["", "click: power   scroll: setpoint",
-                  "right: fan     middle: fan auto"]
+    lines += ["", "click: panel   right: power"]
     tooltip = "\n".join(lines)
 
     if st["fault"]:
@@ -315,9 +311,13 @@ def state_json(max_age=CACHE_TTL):
         "setpoint": st["setpoint"],
         "setpoint_text": ("%d°" % st["setpoint"]
                           if st["setpoint"] is not None else "--"),
-        "room_text": "room %d°" % st["room"] if st["room"] is not None else "",
-        "outdoor_text": ("outdoor %d°" % st["outdoor"]
-                         if st["outdoor"] is not None else ""),
+        # The editable field holds the bare number - a degree sign in there
+        # would just be something to delete before typing.
+        "setpoint_input": ("%d" % st["setpoint"]
+                           if st["setpoint"] is not None else ""),
+        "room_temp": "%d°" % st["room"] if st["room"] is not None else "--",
+        "outdoor_temp": ("%d°" % st["outdoor"]
+                         if st["outdoor"] is not None else "--"),
         "fan": st["fan"] if st["fan"] is not None else "",
         "fan_text": fan_text(st["fan"]) or "--",
         "fan_auto": st["fan"] == "auto",
@@ -328,8 +328,6 @@ def state_json(max_age=CACHE_TTL):
                                and n <= st["fan"]}
                     for n in range(FAN_MIN, fmax + 1)],
         "fault": st["fault"],
-        "energy_text": ("%.1f kWh" % st["energy_kwh"]
-                        if st["energy_kwh"] is not None else ""),
     }
 
 

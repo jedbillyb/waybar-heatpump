@@ -1,164 +1,162 @@
-// heat pump panel — matches waybar's palette: #242424 at 0.85, #cccccc text,
-// amber for heat and blue for cool, same as the bar module's classes.
+// heat pump panel.
 //
-// Imported from eww.scss. Everything is namespaced .hp-* because eww applies
-// one stylesheet to every window.
+// Deliberately not a floating card: same background, font and palette as
+// waybar, square corners, flush under the bar. It should look like the bar
+// grew downwards, not like a separate app.
+//
+// Imported from eww.scss. Namespaced .hp-* because eww applies one
+// stylesheet to every window.
+
+$bg:      rgba(36, 36, 36, 0.85);   // waybar's exact background
+$text:    #cccccc;
+$dim:     #7a7a7a;
+$bright:  #ffffff;
+$amber:   #e0af68;
+$blue:    #7dcfff;
+$green:   #9ece6a;
+$red:     #f7768e;
+$hair:    rgba(255, 255, 255, 0.07);
 
 .hp-panel {
-  background-color: rgba(36, 36, 36, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 14px 16px 12px 16px;
-  color: #cccccc;
+  // Fixed so the panel does not change width when the target swaps to an
+  // editable field - a GTK entry is much wider than the number it replaces.
+  min-width: 240px;
+  background-color: $bg;
+  padding: 10px 14px 12px 14px;
+  color: $text;
   font-family: "DejaVu Sans Mono", monospace;
+  font-size: 11px;
 }
 
+// The stub that ties the panel to the module it came out of: an amber rule
+// the width of the module's own text, sitting flush against the bar.
+.hp-tab {
+  background-color: $amber;
+  min-height: 2px;
+  min-width: 36px;
+  margin-left: 14px;    // line the stub up with the module's text, not the
+}                       // panel's edge - the panel carries 14px of padding
+
 .hp-head {
-  margin-bottom: 10px;
+  margin-bottom: 2px;
 }
 
 .hp-title {
-  font-size: 13px;
-  font-weight: bold;
-  color: #ffffff;
+  color: $dim;
 }
 
-// Power pill ---------------------------------------------------------------
-
-.hp-pill {
-  border-radius: 10px;
-  padding: 2px 9px;
-  font-size: 11px;
-
-  &.on {
-    background-color: rgba(158, 206, 106, 0.16);
-    .hp-dot      { color: #9ece6a; }
-    .hp-pilltext { color: #9ece6a; }
-  }
-
-  &.off {
-    background-color: rgba(255, 255, 255, 0.06);
-    .hp-dot      { color: #666666; }
-    .hp-pilltext { color: #888888; }
-  }
+.hp-power {
+  &.on  { color: $green; }
+  &.off { color: $dim; }
 }
 
-.hp-dot {
-  font-size: 9px;
-}
-
-// Setpoint -----------------------------------------------------------------
+// Target ---------------------------------------------------------------------
 
 .hp-dial {
-  margin: 4px 0 14px 0;
+  margin: 6px 0 10px 0;
 }
 
-.hp-readout {
-  min-width: 96px;
+.hp-target {
+  min-width: 84px;
 }
 
-.hp-setpoint {
-  font-size: 34px;
-  color: #ffffff;
+.hp-big {
+  font-size: 30px;
+  color: $bright;
 }
 
-.hp-room {
-  font-size: 11px;
-  color: #888888;
-  margin-top: -2px;
+// The editable target. Sized to the number so it does not shove the
+// steppers aside - a GTK entry takes every pixel it is offered.
+.hp-entry {
+  min-width: 74px;
+  font-size: 30px;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: $bright;
+  caret-color: $amber;
+
+  &:focus {
+    background-color: transparent;
+    box-shadow: none;
+  }
 }
 
-// Big hit targets - these get pressed repeatedly, and a 1° step is not worth
-// aiming for.
+.hp-caption {
+  font-size: 10px;
+  color: $dim;
+  margin-top: -3px;
+}
+
+// Flat glyphs rather than buttons - a box around them would be the only
+// chrome on the panel. Large padding keeps them easy to hit anyway.
 .hp-step {
-  font-size: 22px;
-  color: #cccccc;
-  padding: 6px 14px;
-  border-radius: 6px;
-  background-color: rgba(255, 255, 255, 0.05);
+  font-size: 19px;
+  color: $dim;
+  padding: 4px 13px;
 
-  &:hover {
-    background-color: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
-  }
+  &:hover { color: $bright; }
 }
 
-// Mode + auto buttons ------------------------------------------------------
+// Readings -------------------------------------------------------------------
 
-.hp-modes {
-  margin-bottom: 14px;
+.hp-readings {
+  padding: 8px 0;
 }
 
-.hp-mode {
-  font-size: 11px;
-  color: #888888;
-  padding: 4px 0;
-  border-radius: 5px;
-  background-color: rgba(255, 255, 255, 0.05);
-
-  &:hover { color: #ffffff; }
-
-  &.active {
-    color: #242424;
-    background-color: #e0af68;
-    font-weight: bold;
-  }
+.hp-reading {
+  padding: 1px 0;
 }
 
-// The fan's auto button is narrower than a mode button, so give it a little
-// breathing room rather than letting the text touch the edges.
-.hp-fanrow .hp-mode {
-  padding: 4px 8px;
+.hp-key {
+  color: $dim;
+  min-width: 40px;
 }
 
-// Fan bar ------------------------------------------------------------------
-
-.hp-fanrow {
-  margin-bottom: 12px;
+.hp-val {
+  color: $text;
 }
 
-.hp-label {
-  font-size: 11px;
-  color: #888888;
+// An empty box, so it stays a hairline. Give it a child and GTK grows it to
+// a full line height and it reads as an empty input field.
+.hp-rule {
+  background-color: $hair;
+  min-height: 1px;
+}
+
+// Mode + fan -----------------------------------------------------------------
+
+.hp-row {
+  padding: 7px 0 0 0;
+}
+
+// Words, not buttons - the bar labels things the same way.
+.hp-word {
+  color: $dim;
+  padding: 2px 0;
+
+  &:hover  { color: $bright; }
+  &.active { color: $amber; }
+}
+
+.hp-bars {
+  margin-right: 8px;
 }
 
 .hp-seg {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.13);
 
-  &.filled { color: #7dcfff; }
-  &:hover  { color: #ffffff; }
-}
-
-.hp-fantext {
-  font-size: 11px;
-  color: #888888;
-  margin-left: 4px;
-}
-
-// Footer -------------------------------------------------------------------
-
-.hp-foot {
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  padding-top: 8px;
-}
-
-.hp-dim {
-  font-size: 10px;
-  color: #6b6b6b;
+  &.filled { color: $blue; }
+  &:hover  { color: $bright; }
 }
 
 .hp-fault {
-  font-size: 11px;
-  color: #f7768e;
-  margin-top: 6px;
+  color: $red;
+  padding-top: 8px;
 }
 
 .hp-down {
-  padding: 18px 0 10px 0;
-}
-
-.hp-downtext {
-  font-size: 11px;
-  color: #888888;
+  padding: 10px 0 4px 0;
 }

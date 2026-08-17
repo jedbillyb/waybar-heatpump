@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Work out where the heat pump module sits on the bar, so the panel drops
+straight out of it instead of floating in a corner.
+
+waybar exposes no geometry, so this measures the bar itself: grab the top
+strip of the screen, mark every column that has a glyph on it, and look at
+the gaps. The heat pump module is the first entry in `modules-right`, and the
+space between the centred clock and the right-hand group is far wider than
+the spacing between neighbouring modules - so the content starting after the
+widest gap in the right half of the bar is the module.
+
+Two approaches that don't work, for the next person:
+
+- Comparing against a background colour sampled from the bar. waybar is
+  translucent, so its "background" is the wallpaper underneath and differs at
+  every x. A luminance threshold picks out text regardless.
+- Matching the module's own colour. It changes with the mode, and the greys
+  it uses when off are shared with other modules.
+
+Prints the module's left edge in pixels.
+"""
+
+import io
+import json
+import subprocess
+import sys
+
+BAR_HEIGHT = 16
+TEXT_LUMA = 130     # glyphs sit well above the darkened wallpaper behind them
+MIN_GAP = 20
+FALLBACK_FROM_RIGHT = 674
+
+
+def screen_width():
+    try:
+        out = subprocess.run(["swaymsg", "-t", "get_outputs", "-r"],
+                             capture_output=True, text=True, check=True).stdout
+        outputs = json.loads(out)
+        for o in outputs:
+            if o.get("focused"):
+                return o["rect"]["width"]
+        return outputs[0]["rect"]["width"]
+    except Exception:
+        return 1920
+
+
+def content_columns(width):
+    png = subprocess.run(
+        ["grim", "-g", "0,0 %dx%d" % (width, BAR_HEIGHT), "-"],
+        capture_output=True, check=True).stdout
+    from PIL import Image
+    im = Image.open(io.BytesIO(png)).convert("RGB")
+    w, h = im.size
+    px = im.load()
+    out = []
+    for x in range(w):
+        lit = False
+        for y in range(h):
+            r, g, b = px[x, y]
+            if 0.299 * r + 0.587 * g + 0.114 * b > TEXT_LUMA:
+                lit = True
+                break
+        out.append(lit)
+    return out
+
+
+def main():
+    width = screen_width()
+    try:
+        cols = content_columns(width)
+    except Exception:
+        print(max(0, width - FALLBACK_FROM_RIGHT))
+        return
+
+    # Collapse glyph columns into gaps, then pick the widest gap that starts
+    # in the right half of the bar. Anything narrower is inter-module spacing.
+    best_gap, best_end = 0, None
+    x = 0
+    while x < width:
+        if cols[x]:
+            x += 1
+            continue
+        start = x
+        while x < width and not cols[x]:
+            x += 1
+        # A trailing gap runs to the screen edge and marks nothing.
+        if x >= width:
+            break
+        gap = x - start
+        if gap >= MIN_GAP and start > width * 0.45 and gap > best_gap:
+            best_gap, best_end = gap, x
+
+    print(best_end if best_end is not None
+          else max(0, width - FALLBACK_FROM_RIGHT))
+
+
+if __name__ == "__main__":
+    main()

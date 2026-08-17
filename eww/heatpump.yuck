@@ -1,4 +1,4 @@
-; heat pump — control panel for the ECHONET Lite aircon.
+; heat pump - control panel for the ECHONET Lite aircon.
 ;
 ; Included from eww.yuck. The listener runs only while the window is open, so
 ; nothing polls the device when the panel is closed.

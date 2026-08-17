@@ -6,7 +6,7 @@ speed, fault flag and lifetime energy, and can control power, setpoint and
 mode from the bar.
 
 Written against a Mitsubishi Electric unit (manufacturer code `0x000006`,
-EOJ `013001`, "home air conditioner"), but nothing in it is vendor-specific —
+EOJ `013001`, "home air conditioner"), but nothing in it is vendor-specific -
 it only uses standard ECHONET Lite properties and reads the device's own
 property map, so it should work with any ECHONET Lite aircon.
 
@@ -34,15 +34,18 @@ power without opening anything.
 
 It is deliberately not a floating card. It uses waybar's exact background
 (`rgba(36,36,36,0.85)`, translucency included), the same font and palette,
-square corners, sits flush against the bar's bottom edge, and carries an amber
-stub the width of the module's own text so it visibly hangs off the thing that
-opened it.
+square corners, and sits flush against the bar's bottom edge, centred on the
+module that opened it.
+
+An accent stripe across the top was tried and dropped: sharing the bar's exact
+background and sitting flush against it already reads as attached, and a
+coloured stub on top of that just looked stuck on.
 
 The target temperature is click-to-type: click the number, type a value, press
 Enter. The steppers are still there for a quick nudge.
 
 ```
- hp                        on
+ heat pump                 on
 
         −     31°     +
               target
@@ -56,10 +59,9 @@ Enter. The steppers are still there for a quick nudge.
 
 ### Positioning
 
-The panel's x position is measured at open time, not hardcoded. The heat pump
-module is the leftmost entry in `modules-right`, so it slides sideways
-whenever anything to its right changes width - the wifi percentage alone moves
-it several pixels.
+The panel's x position is measured, not hardcoded. The heat pump module is the
+leftmost entry in `modules-right`, so it slides sideways whenever anything to
+its right changes width - the wifi percentage alone moves it several pixels.
 
 The panel is centred on the module. `panel-position.py` grabs the top strip of
 the screen, marks every column carrying a glyph, and takes the content starting
@@ -87,9 +89,22 @@ the panel opens under the wrong thing precisely when the unit is off. It sits
 at 85.
 
 Measuring once at open time is not enough either: the module slides whenever
-anything to its right changes width. `heatpump-track.py` re-measures every
-1.5s while the panel is open and moves it, then exits on its own once the
-panel is gone.
+anything to its right changes width. `heatpump-track.py` re-measures while the
+panel is open and moves it, then exits on its own once the panel is gone.
+
+That measurement does not happen before the window opens, though. A grim
+capture plus a Pillow import plus a couple of interpreter starts is ~180ms,
+and doing it up front made it most of the gap between the click and the panel
+appearing. The position is almost always what it was last time, so the panel
+opens at the remembered one immediately and the tracker corrects it: the
+tracker takes its first measurement straight away rather than after its 1.5s
+interval, and writes each result to `$XDG_RUNTIME_DIR/waybar-heatpump.xpos`.
+Only the first open after a reboot pays for a measurement, and open time goes
+from ~0.36s to ~0.10s.
+
+When the remembered position is wrong it is wrong by a few pixels, because the
+module's own text changed width (`hp off` -> `hp 21°C`), and the correction
+lands about 200ms after the panel appears.
 
 It runs as its own process for a reason. Repositioning means `eww open` on an
 already-open window, which re-renders it and restarts any `deflisten` that
@@ -174,7 +189,46 @@ heatpump-status.py dump       every readable property, decoded
 heatpump-status.py discover   find ECHONET Lite nodes on the LAN
 ```
 
-No dependencies beyond Python 3.
+## Requirements
+
+The bar module needs **nothing beyond Python 3** - no third-party packages,
+no ECHONET library. If all you want is the module and its tooltip, that is the
+whole dependency list.
+
+The panel adds some, all of them things a Wayland bar setup tends to have
+already:
+
+| Needs | For |
+|-------|-----|
+| [eww](https://github.com/elkowar/eww) 0.5+ | the panel itself |
+| `grim` | screenshotting the bar to locate the module |
+| Pillow | reading that screenshot |
+| sway | binding Escape while the panel is open |
+
+Only the Escape binding is sway-specific. On another wlroots compositor the
+panel still opens, tracks and closes on click-off; swap the two `swaymsg`
+lines in `heatpump-panel.sh` for your compositor's equivalent to get Escape
+back.
+
+## Install
+
+```sh
+git clone https://github.com/jedbillyb/waybar-heatpump
+cd waybar-heatpump
+
+cp heatpump-status.py echonetlite.py ~/.config/waybar/
+cp eww/* ~/.config/eww/
+```
+
+Add the include lines to your eww config:
+
+```sh
+echo '(include "heatpump.yuck")' >> ~/.config/eww/eww.yuck
+echo '@import "heatpump";'       >> ~/.config/eww/eww.scss
+```
+
+Then add the module to your waybar config and style it (see below), and run
+`heatpump-status.py calibrate` once to find the unit's real top fan speed.
 
 ## Finding the device
 
@@ -203,27 +257,46 @@ what it finds, if you'd rather pin the address in the config file.
 }
 ```
 
-The module emits a CSS class per state — `heat`, `cool`, `dry`, `fan`, `auto`,
-`on`, `off`, `fault`, `unreachable` — so the bar can colour by what the unit
+The module emits a CSS class per state - `heat`, `cool`, `dry`, `fan`, `auto`,
+`on`, `off`, `fault`, `unreachable` - so the bar can colour by what the unit
 is actually doing. Control commands invalidate the cache and push
 `SIGRTMIN+12` so the bar updates immediately instead of waiting out the poll
 interval.
+
+```css
+#custom-heatpump              { padding: 0 10px; }
+#custom-heatpump.off,
+#custom-heatpump.unreachable  { color: #666666; }
+#custom-heatpump.heat         { color: #e0af68; }
+#custom-heatpump.cool         { color: #7dcfff; }
+#custom-heatpump.dry,
+#custom-heatpump.fan,
+#custom-heatpump.auto,
+#custom-heatpump.on           { color: #aaaaaa; }
+#custom-heatpump.fault        { color: #f7768e; }
+```
+
+Give it the same horizontal padding as your other modules. Leaving it off is
+worth a specific warning: with waybar's `* { padding: 0 }` reset the module
+ends up flush against its neighbour, and because `panel-position.py` reads the
+bar as pixels, an unusually tight gap there is exactly the kind of thing that
+makes locating the module harder.
 
 Left click opens the panel, right click toggles power.
 
 Scroll bindings (`warmer`/`cooler` on `on-scroll-up`/`on-scroll-down`) were
 tried first and removed: a scroll gesture that happens to land on the module
-walks the setpoint to the end of its 16–31°C range, which in heat mode reads
+walks the setpoint to the end of its 16-31°C range, which in heat mode reads
 as the unit having switched off. The commands still exist for the CLI, they
 are just not worth binding to a wheel.
 
-Setpoint changes are clamped to 16–31°C; the device itself accepts 0–50.
+Setpoint changes are clamped to 16-31°C; the device itself accepts 0-50.
 
 ## Fan speed
 
-ECHONET Lite defines eight fan levels (`0x31`–`0x38` in EPC `0xA0`) plus auto,
+ECHONET Lite defines eight fan levels (`0x31`-`0x38` in EPC `0xA0`) plus auto,
 but units implement fewer, and **a set above what the unit supports is not
-rejected** — it returns `Set_Res` like any other write and is then silently
+rejected** - it returns `Set_Res` like any other write and is then silently
 ignored. The Mitsubishi this was written against tops out at 6.
 
 So the ceiling has to be measured, not assumed:
@@ -264,7 +337,7 @@ Two things about ECHONET Lite cost real debugging time here, both handled in
 socket has to bind 3610 itself.
 
 **That makes concurrent polling unsafe.** Two processes bound to 3610 with
-`SO_REUSEADDR` will steal each other's datagrams — only one socket receives
+`SO_REUSEADDR` will steal each other's datagrams - only one socket receives
 any given packet. So reads go through an flock plus a short-lived cache
 (`$XDG_RUNTIME_DIR/waybar-heatpump.json`, 20s, override with
 `$HEATPUMP_CACHE_TTL`), and every response is matched on its transaction ID
@@ -281,10 +354,10 @@ both.
 |------|----------------------------|-------|
 | 0x80 | Power                      | `0x30` on, `0x31` off |
 | 0xB0 | Mode                       | `0x41` auto, `0x42` cool, `0x43` heat, `0x44` dry, `0x45` fan |
-| 0xB3 | Setpoint °C                | `0x00`–`0x32`, else undefined |
+| 0xB3 | Setpoint °C                | `0x00`-`0x32`, else undefined |
 | 0xBB | Measured room temp °C      | signed byte |
 | 0xBE | Measured outdoor temp °C   | signed byte |
-| 0xA0 | Fan speed                  | `0x41` auto, `0x31`–`0x38` levels 1–8 |
+| 0xA0 | Fan speed                  | `0x41` auto, `0x31`-`0x38` levels 1-8 |
 | 0x88 | Fault status               | `0x41` fault, `0x42` no fault |
 | 0x85 | Cumulative energy          | 4 bytes, units of 0.001 kWh |
 
@@ -295,7 +368,11 @@ module omits missing fields from the tooltip rather than showing zeroes.
 
 ## Security
 
-ECHONET Lite as specified has no authentication whatsoever — anything on the
+ECHONET Lite as specified has no authentication whatsoever - anything on the
 same L2 network can read and control the unit. That is what makes this module
 possible, and it is also worth knowing about: keep the device off any network
 you don't trust, and don't expose UDP 3610 to the internet.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).

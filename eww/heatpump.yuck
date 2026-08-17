@@ -44,7 +44,9 @@
     (box :class "hp-panel" :orientation "v" :space-evenly false
 
       (box :class "hp-head" :orientation "h" :space-evenly false
-        (label :class "hp-title" :text "hp" :xalign 0 :hexpand true)
+        ; Spelled out here, unlike the bar module's "hp". The bar is fighting
+        ; for horizontal space against every other module; the panel is not.
+        (label :class "hp-title" :text "heat pump" :xalign 0 :hexpand true)
         (label :class "hp-power ${hp.on ? "on" : "off"}"
                :text {hp.power_text ?: ""} :xalign 1))
 

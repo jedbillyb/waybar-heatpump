@@ -26,7 +26,13 @@ import subprocess
 import sys
 
 BAR_HEIGHT = 16
-TEXT_LUMA = 130     # glyphs sit well above the darkened wallpaper behind them
+# Glyph luminance has to clear the bar's background but still catch the
+# module's dim states. waybar is translucent, so the worst-case background is
+# a white wallpaper at 15%: 0.15*255 + 0.85*36 = 69. The dimmest text on the
+# bar is #666666 at 102 - which is exactly what the heat pump module goes when
+# the unit is off. A threshold of 130 loses the module in that state and
+# silently reports the next one along.
+TEXT_LUMA = 85
 MIN_GAP = 20
 FALLBACK_FROM_RIGHT = 674
 

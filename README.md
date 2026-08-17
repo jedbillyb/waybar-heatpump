@@ -66,6 +66,25 @@ carrying a glyph, and takes the content starting after the widest gap in the
 right half of the bar. That gap is the space between the centred clock and the
 right-hand group; inter-module spacing is much narrower.
 
+The glyph threshold matters more than it looks. waybar is translucent, so the
+worst case background is a white wallpaper at 15%: `0.15*255 + 0.85*36 = 69`.
+The dimmest text on the bar is `#666666` at luminance 102 - which is exactly
+what the heat pump module goes when the unit is **off**. A threshold of 130
+loses the module in that state and silently reports the next module along, so
+the panel opens under the wrong thing precisely when the unit is off. It sits
+at 85.
+
+Measuring once at open time is not enough either: the module slides whenever
+anything to its right changes width. `heatpump-track.py` re-measures every
+1.5s while the panel is open and moves it, then exits on its own once the
+panel is gone.
+
+It runs as its own process for a reason. Repositioning means `eww open` on an
+already-open window, which re-renders it and restarts any `deflisten` that
+window owns. A tracker living inside the panel's listener therefore kills
+itself every time it moves the window and comes back up with no memory of
+having done so, which loops forever.
+
 Two approaches that don't work, for the next person:
 
 - **Sampling the bar's background colour.** waybar is translucent, so its
@@ -73,6 +92,19 @@ Two approaches that don't work, for the next person:
   threshold picks out text regardless of what is behind it.
 - **Matching the module's own colour.** It changes with the mode, and the greys
   it uses when off are shared with other modules.
+
+### Dismissal
+
+Clicking anywhere outside the panel closes it, and so does Escape. Neither is
+something eww can do by itself:
+
+- A layer-shell surface cannot see clicks that land outside it, so
+  `heatpump-backdrop` is a full-screen transparent window one layer below the
+  panel whose only job is to catch them. It must paint something - a fully
+  transparent box takes no pointer events - so it paints black at 1% alpha.
+- eww 0.5 has no key events at all. Escape is bound in sway with
+  `swaymsg bindsym` when the panel opens and removed with `unbindsym` when it
+  closes, so Escape reaches applications normally the rest of the time.
 
 ### Keyboard focus, and why there are two windows
 

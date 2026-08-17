@@ -126,3 +126,24 @@
                       :width "268px"
                       :anchor "top left")
   (hp-body :xpos xpos :editing true))
+
+
+;; ── click-off backdrop ──────────────────────────────────────────────────────
+
+; A layer-shell panel cannot see clicks that land outside it, so closing on a
+; click elsewhere needs something to catch them: a full-screen, fully
+; transparent window sitting one layer below the panel. Clicking it closes
+; everything; clicks on the panel never reach it, because the panel is above.
+;
+; Deliberately not focusable - it only needs the pointer. Escape is handled by
+; a sway binding installed while the panel is open, since eww 0.5 has no key
+; events at all.
+(defwindow heatpump-backdrop []
+  :monitor 0
+  :stacking "fg"
+  :focusable false
+  :geometry (geometry :x "0px" :y "0px"
+                      :width "100%" :height "100%"
+                      :anchor "top left")
+  (eventbox :onclick "~/.config/eww/heatpump-panel.sh --close"
+    (box :class "hp-backdrop")))

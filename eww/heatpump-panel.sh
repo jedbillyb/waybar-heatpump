@@ -20,8 +20,8 @@ set -eu
 
 EWW_DIR="$HOME/.config/eww"
 SELF="$EWW_DIR/heatpump-panel.sh"
-PADDING=14      # the panel's own padding, so its text lines up with the
-                # module's text rather than with the module's left edge
+WIDTH=268       # the panel window's width; the panel is centred inside it, so
+                # centring the window on the module centres the panel too
 
 eww ping >/dev/null 2>&1 || eww daemon >/dev/null 2>&1 || true
 
@@ -56,8 +56,13 @@ if eww active-windows 2>/dev/null | grep -q '^heatpump'; then
     exit 0
 fi
 
-x=$(python3 "$EWW_DIR/panel-position.py" 2>/dev/null || echo 1246)
-x=$(( x > PADDING ? x - PADDING : 0 ))
+# The module's width comes from its own text, so pass it through.
+text=$(python3 "$HOME/.config/waybar/heatpump-status.py" 2>/dev/null \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["text"])' \
+        2>/dev/null || echo "hp")
+centre=$(python3 "$EWW_DIR/panel-position.py" "$text" 2>/dev/null || echo 1280)
+x=$(( centre - WIDTH / 2 ))
+[ "$x" -lt 0 ] && x=0
 
 eww open heatpump-backdrop
 eww open heatpump --arg "xpos=$x"

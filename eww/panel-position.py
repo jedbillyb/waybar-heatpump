@@ -17,7 +17,18 @@ Two approaches that don't work, for the next person:
 - Matching the module's own colour. It changes with the mode, and the greys
   it uses when off are shared with other modules.
 
-Prints the module's left edge in pixels.
+Prints the left edge of the module, or its centre if given the module's text.
+
+Finding the far edge by looking for a gap does not work. The space between
+"hp off" and the module after it can be ~12px, which is narrower than the
+spacing between the words inside "hp off" itself - so any threshold either
+splits the module in half or swallows its neighbour. Measuring gaps to find
+where the module *starts* is fine; measuring them to find where it ends is
+not.
+
+The width comes from the text instead: waybar renders DejaVu Sans Mono at
+9px, and the font is exactly 0.6 em per character, so a module's width is its
+character count times 5.41px.
 """
 
 import io
@@ -34,6 +45,7 @@ BAR_HEIGHT = 16
 # silently reports the next one along.
 TEXT_LUMA = 85
 MIN_GAP = 20
+CHAR_W = 5.41       # DejaVu Sans Mono at 9px: 0.6 em per character
 FALLBACK_FROM_RIGHT = 674
 
 
@@ -96,8 +108,11 @@ def main():
         if gap >= MIN_GAP and start > width * 0.45 and gap > best_gap:
             best_gap, best_end = gap, x
 
-    print(best_end if best_end is not None
-          else max(0, width - FALLBACK_FROM_RIGHT))
+    left = best_end if best_end is not None else max(
+        0, width - FALLBACK_FROM_RIGHT)
+
+    text = sys.argv[1] if len(sys.argv) > 1 else ""
+    print(int(left + len(text) * CHAR_W / 2) if text else left)
 
 
 if __name__ == "__main__":

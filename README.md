@@ -61,10 +61,22 @@ module is the leftmost entry in `modules-right`, so it slides sideways
 whenever anything to its right changes width - the wifi percentage alone moves
 it several pixels.
 
-`panel-position.py` grabs the top strip of the screen, marks every column
-carrying a glyph, and takes the content starting after the widest gap in the
-right half of the bar. That gap is the space between the centred clock and the
-right-hand group; inter-module spacing is much narrower.
+The panel is centred on the module. `panel-position.py` grabs the top strip of
+the screen, marks every column carrying a glyph, and takes the content starting
+after the widest gap in the right half of the bar - that gap is the space
+between the centred clock and the right-hand group.
+
+That finds where the module *starts*. Finding where it ends by looking for the
+next gap does not work: the space between `hp off` and the module after it can
+be ~12px, which is narrower than the spacing between the words inside `hp off`
+itself, so any threshold either splits the module in half or swallows its
+neighbour. The width comes from the text instead - waybar renders DejaVu Sans
+Mono at 9px and the font is exactly 0.6 em per character, so the module is its
+character count times 5.41px wide. The caller passes the module's own bar text
+in.
+
+The panel is centred inside its window, so centring the window on the module
+centres the panel whatever width its content comes out at.
 
 The glyph threshold matters more than it looks. waybar is translucent, so the
 worst case background is a white wallpaper at 15%: `0.15*255 + 0.85*36 = 69`.

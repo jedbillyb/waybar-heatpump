@@ -40,7 +40,7 @@
 ;; ── the panel ───────────────────────────────────────────────────────────────
 
 (defwidget hp-body [xpos editing]
-  (box :orientation "v" :space-evenly false :halign "start"
+  (box :orientation "v" :space-evenly false :halign "center"
     (box :class "hp-panel" :orientation "v" :space-evenly false
 
       (box :class "hp-head" :orientation "h" :space-evenly false
@@ -73,12 +73,20 @@
                      :onaccept "${HP} settemp {} && ~/.config/eww/heatpump-panel.sh --show ${xpos}")
               (eventbox :visible {editing == false} :cursor "text"
                         :onclick "~/.config/eww/heatpump-panel.sh --edit ${xpos}"
-                (label :class "hp-big" :text {hp.setpoint_text})))
+                ; Centred on the digits, not on digits-plus-degree. The box
+                ; carries a left margin of one degree-glyph, and GTK splits an
+                ; asymmetric margin when centring, so the group shifts right by
+                ; half a glyph - exactly cancelling the degree sign's width on
+                ; the other side.
+                (box :class "hp-bignum" :orientation "h" :space-evenly false
+                     :halign "center"
+                  (label :class "hp-big" :text {hp.setpoint_big})
+                  (label :class "hp-big hp-degree" :text "°"))))
             (eventbox :visible editing :cursor "pointer"
                       :onclick "~/.config/eww/heatpump-panel.sh --show ${xpos}"
-              (label :class "hp-caption" :text "enter to set"))
+              (label :class "hp-caption" :text "enter to set" :xalign 0.5))
             (label :class "hp-caption" :visible {editing == false}
-                   :text "target"))
+                   :text "target" :xalign 0.5))
           (eventbox :cursor "pointer" :onclick "${HP} warmer"
             (label :class "hp-step" :text "+")))
 

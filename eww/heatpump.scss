@@ -56,6 +56,12 @@ $hair:    rgba(255, 255, 255, 0.07);
   color: $bright;
 }
 
+// DejaVu Sans Mono is 0.6em wide, so a 30px degree glyph is 18px. Half of
+// that is the offset needed to put the digits themselves on the centre line.
+.hp-bignum {
+  margin-left: 18px;
+}
+
 // The editable target. Sized to the number so it does not shove the
 // steppers aside - a GTK entry takes every pixel it is offered.
 .hp-entry {

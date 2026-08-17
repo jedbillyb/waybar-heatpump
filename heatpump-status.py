@@ -315,6 +315,12 @@ def state_json(max_age=CACHE_TTL):
         # would just be something to delete before typing.
         "setpoint_input": ("%d" % st["setpoint"]
                            if st["setpoint"] is not None else ""),
+        # The big readout carries no degree sign either. It is a wide glyph
+        # sitting on one side of the number, so including it centres the pair
+        # but leaves the digits visibly off to the left. The unit lives in the
+        # caption instead.
+        "setpoint_big": ("%d" % st["setpoint"]
+                         if st["setpoint"] is not None else "--"),
         "room_temp": "%d°" % st["room"] if st["room"] is not None else "--",
         "outdoor_temp": ("%d°" % st["outdoor"]
                          if st["outdoor"] is not None else "--"),

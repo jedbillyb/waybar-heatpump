@@ -16,6 +16,7 @@ Started by heatpump-panel.sh when the panel opens; exits on its own once the
 panel is gone, so nothing is left running.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -23,15 +24,27 @@ import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 INTERVAL = 1.5
-PADDING = 14        # the panel's padding, so its text lines up with the
-                    # module's text rather than the module's left edge
+WIDTH = 268         # the panel window's width; the panel is centred inside it,
+                    # so centring the window centres the panel on the module
 JITTER = 2          # ignore sub-pixel wobble in the measurement
 
 
+def module_text():
+    """The module's own bar text, which is what sets its width."""
+    status = os.path.join(os.path.dirname(HERE), "heatpump-status.py")
+    try:
+        out = subprocess.run(["python3", status], capture_output=True,
+                             text=True, timeout=5).stdout
+        return json.loads(out).get("text", "")
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return ""
+
+
 def measure():
-    out = subprocess.run(["python3", os.path.join(HERE, "panel-position.py")],
-                         capture_output=True, text=True, timeout=5).stdout
-    return max(0, int(out.strip()) - PADDING)
+    out = subprocess.run(
+        ["python3", os.path.join(HERE, "panel-position.py"), module_text()],
+        capture_output=True, text=True, timeout=8).stdout
+    return max(0, int(out.strip()) - WIDTH // 2)
 
 
 def panel_open():

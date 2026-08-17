@@ -10,7 +10,9 @@
     heatpump-status.py fandown    fan speed -1
     heatpump-status.py fancycle   auto -> 1 -> ... -> 8 -> auto
     heatpump-status.py fan 1-8|auto
+    heatpump-status.py settemp N  setpoint to N degrees
     heatpump-status.py calibrate  find the unit's real top fan speed
+    heatpump-status.py state      full state as JSON (drives the eww panel)
     heatpump-status.py dump       every readable property, decoded
     heatpump-status.py discover   find ECHONET nodes on the LAN
 
@@ -32,6 +34,7 @@ RUNTIME = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 CACHE = os.path.join(RUNTIME, "waybar-heatpump.json")
 IPCACHE = os.path.join(RUNTIME, "waybar-heatpump.ip")
 LOCK = os.path.join(RUNTIME, "waybar-heatpump.lock")
+POKE = os.path.join(RUNTIME, "waybar-heatpump.poke")
 CONF = os.path.expanduser("~/.config/waybar/heatpump.conf")
 
 CACHE_TTL = float(os.environ.get("HEATPUMP_CACHE_TTL", "20"))
@@ -224,8 +227,18 @@ def patch_cache(**fields):
 
 
 def nudge_waybar():
+    """Push a redraw to both front ends after a control action.
+
+    waybar takes a real-time signal; the eww panel watches POKE's mtime,
+    because its listener is a plain pipe with nowhere to send a signal to.
+    """
     subprocess.run(["pkill", "-RTMIN+%d" % WAYBAR_SIGNAL, "waybar"],
                    stderr=subprocess.DEVNULL)
+    try:
+        with open(POKE, "w") as f:
+            f.write(str(time.time()))
+    except OSError:
+        pass
 
 
 # --- waybar output ---------------------------------------------------------
@@ -273,6 +286,51 @@ def status():
     else:
         room = "%d°C" % st["room"] if st["room"] is not None else "on"
         emit("hp %s" % room, st["mode"] or "on", tooltip)
+
+
+def state_json(max_age=CACHE_TTL):
+    """Flat state for the eww panel, with the display work already done.
+
+    Yuck can't do much arithmetic or formatting, so anything the panel needs
+    as a string or a list is computed here rather than in the widget.
+    """
+    ip = device_ip()
+    fmax = fan_max()
+    if not ip:
+        return {"ok": False, "reason": "no device found",
+                "fanbars": [], "modes": []}
+    try:
+        st = cached_state(ip, max_age)
+    except el.EchonetError as e:
+        return {"ok": False, "reason": str(e), "fanbars": [], "modes": []}
+
+    return {
+        "ok": True,
+        "ip": ip,
+        "on": st["on"],
+        "power_text": "on" if st["on"] else "off",
+        "mode": st["mode"] or "",
+        "modes": [{"name": m, "active": st["mode"] == m}
+                  for m in ("heat", "cool", "dry", "fan")],
+        "setpoint": st["setpoint"],
+        "setpoint_text": ("%d°" % st["setpoint"]
+                          if st["setpoint"] is not None else "--"),
+        "room_text": "room %d°" % st["room"] if st["room"] is not None else "",
+        "outdoor_text": ("outdoor %d°" % st["outdoor"]
+                         if st["outdoor"] is not None else ""),
+        "fan": st["fan"] if st["fan"] is not None else "",
+        "fan_text": fan_text(st["fan"]) or "--",
+        "fan_auto": st["fan"] == "auto",
+        # One entry per selectable speed; `filled` drives the bar graph look,
+        # so auto leaves every segment empty.
+        "fanbars": [{"level": n,
+                     "filled": st["fan"] != "auto" and st["fan"] is not None
+                               and n <= st["fan"]}
+                    for n in range(FAN_MIN, fmax + 1)],
+        "fault": st["fault"],
+        "energy_text": ("%.1f kWh" % st["energy_kwh"]
+                        if st["energy_kwh"] is not None else ""),
+    }
 
 
 # --- control ---------------------------------------------------------------
@@ -347,11 +405,23 @@ def cycle_fan():
     write_fan(ip, new)
 
 
+def set_temp(arg):
+    try:
+        value = int(arg)
+    except ValueError:
+        sys.exit("settemp takes a temperature in °C")
+    if not SETPOINT_MIN <= value <= SETPOINT_MAX:
+        sys.exit("setpoint must be %d-%d" % (SETPOINT_MIN, SETPOINT_MAX))
+    el.set_prop(device_ip(), EPC_SETPOINT, bytes([value]))
+    patch_cache(setpoint=value)
+    nudge_waybar()
+
+
 def set_mode(name):
     if name not in MODE_BYTES:
         sys.exit("mode must be one of: %s" % ", ".join(MODE_BYTES))
     el.set_prop(device_ip(), EPC_MODE, bytes([MODE_BYTES[name]]))
-    invalidate()
+    patch_cache(mode=name)
     nudge_waybar()
 
 
@@ -479,6 +549,10 @@ def main():
             cycle_fan()
         elif cmd == "calibrate":
             calibrate()
+        elif cmd == "state":
+            print(json.dumps(state_json()))
+        elif cmd == "settemp":
+            set_temp(sys.argv[2] if len(sys.argv) > 2 else "")
         elif cmd == "dump":
             dump()
         elif cmd == "discover":

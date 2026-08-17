@@ -1,0 +1,92 @@
+; heat pump — control panel for the ECHONET Lite aircon.
+;
+; Included from eww.yuck. The listener only runs while the window is open, so
+; nothing polls the device when the panel is closed.
+;
+; Every button shells out to heatpump-status.py, which writes the value it
+; sent into the shared cache and touches the poke file. The listener sees the
+; poke and redraws, so a press lands on screen immediately rather than after
+; the unit has caught up (it takes a second or two to reflect a change in its
+; own properties).
+
+(deflisten hp
+  :initial `{"ok":false,"reason":"connecting","fanbars":[],"modes":[]}`
+  "python3 ~/.config/eww/heatpump-listen.py")
+
+(defvar HP "~/.config/waybar/heatpump-status.py")
+
+;; ── pieces ──────────────────────────────────────────────────────────────────
+
+(defwidget hp-power []
+  (eventbox :cursor "pointer" :onclick "${HP} toggle"
+    (box :class "hp-pill ${hp.on ? "on" : "off"}"
+         :orientation "h" :space-evenly false :spacing 6 :halign "end"
+      (label :class "hp-dot" :text "●")
+      (label :class "hp-pilltext" :text {hp.power_text}))))
+
+; The setpoint sits between its two steppers rather than under them, so the
+; number you are changing is the thing your eye is already on.
+(defwidget hp-dial []
+  (box :class "hp-dial" :orientation "h" :space-evenly false :spacing 14
+       :halign "center"
+    (eventbox :cursor "pointer" :onclick "${HP} cooler"
+      (label :class "hp-step" :text "−"))
+    (box :class "hp-readout" :orientation "v" :space-evenly false :spacing 0
+      (label :class "hp-setpoint" :text {hp.setpoint_text})
+      (label :class "hp-room" :text {hp.room_text}))
+    (eventbox :cursor "pointer" :onclick "${HP} warmer"
+      (label :class "hp-step" :text "+"))))
+
+(defwidget hp-mode [m]
+  (eventbox :cursor "pointer" :onclick "${HP} mode ${m.name}"
+    (label :class "hp-mode ${m.active ? "active" : ""}" :text {m.name})))
+
+; Clicking segment n sets speed n outright, which is quicker than stepping,
+; and the filled run doubles as the level readout.
+(defwidget hp-fanbar [b]
+  (eventbox :cursor "pointer" :onclick "${HP} fan ${b.level}"
+    (label :class "hp-seg ${b.filled ? "filled" : ""}" :text "▊")))
+
+(defwidget hp-fan []
+  (box :class "hp-fanrow" :orientation "h" :space-evenly false :spacing 10
+    (label :class "hp-label" :text "fan")
+    (box :orientation "h" :space-evenly false :spacing 2
+      (for b in {hp.fanbars} (hp-fanbar :b b)))
+    (label :class "hp-fantext" :text {hp.fan_text} :hexpand true :xalign 0)
+    (eventbox :cursor "pointer" :onclick "${HP} fan auto"
+      (label :class "hp-mode ${hp.fan_auto ? "active" : ""}" :text "auto"))))
+
+;; ── the panel ───────────────────────────────────────────────────────────────
+
+(defwidget hp-body []
+  (box :class "hp-panel" :orientation "v" :space-evenly false :spacing 0
+    (box :class "hp-head" :orientation "h" :space-evenly false
+      (label :class "hp-title" :text "Heat pump" :xalign 0 :hexpand true)
+      (hp-power))
+
+    ; One failure box instead of a panel full of dashes - if the device is
+    ; unreachable there is nothing meaningful to draw or press.
+    (box :visible {hp.ok == false} :class "hp-down" :orientation "v"
+         :space-evenly false
+      (label :class "hp-downtext" :text {hp.reason ?: "unreachable"}))
+
+    (box :visible {hp.ok} :orientation "v" :space-evenly false :spacing 0
+      (hp-dial)
+      (box :class "hp-modes" :orientation "h" :space-evenly true :spacing 6
+        (for m in {hp.modes} (hp-mode :m m)))
+      (hp-fan)
+      (box :class "hp-foot" :orientation "h" :space-evenly false
+        (label :class "hp-dim" :text {hp.outdoor_text} :xalign 0 :hexpand true)
+        (label :class "hp-dim" :text {hp.energy_text} :xalign 1))
+      (label :class "hp-fault" :visible {hp.fault} :text "fault reported"))))
+
+; Anchored top-right under waybar, roughly beneath the module that opens it.
+; "ov" so it floats above windows, focusable so Escape can close it.
+(defwindow heatpump
+  :monitor 0
+  :stacking "ov"
+  :focusable true
+  :geometry (geometry :x "12px" :y "6px"
+                      :width "300px"
+                      :anchor "top right")
+  (hp-body))

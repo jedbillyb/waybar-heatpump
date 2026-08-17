@@ -1,0 +1,164 @@
+// heat pump panel — matches waybar's palette: #242424 at 0.85, #cccccc text,
+// amber for heat and blue for cool, same as the bar module's classes.
+//
+// Imported from eww.scss. Everything is namespaced .hp-* because eww applies
+// one stylesheet to every window.
+
+.hp-panel {
+  background-color: rgba(36, 36, 36, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px 16px 12px 16px;
+  color: #cccccc;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+
+.hp-head {
+  margin-bottom: 10px;
+}
+
+.hp-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+// Power pill ---------------------------------------------------------------
+
+.hp-pill {
+  border-radius: 10px;
+  padding: 2px 9px;
+  font-size: 11px;
+
+  &.on {
+    background-color: rgba(158, 206, 106, 0.16);
+    .hp-dot      { color: #9ece6a; }
+    .hp-pilltext { color: #9ece6a; }
+  }
+
+  &.off {
+    background-color: rgba(255, 255, 255, 0.06);
+    .hp-dot      { color: #666666; }
+    .hp-pilltext { color: #888888; }
+  }
+}
+
+.hp-dot {
+  font-size: 9px;
+}
+
+// Setpoint -----------------------------------------------------------------
+
+.hp-dial {
+  margin: 4px 0 14px 0;
+}
+
+.hp-readout {
+  min-width: 96px;
+}
+
+.hp-setpoint {
+  font-size: 34px;
+  color: #ffffff;
+}
+
+.hp-room {
+  font-size: 11px;
+  color: #888888;
+  margin-top: -2px;
+}
+
+// Big hit targets - these get pressed repeatedly, and a 1° step is not worth
+// aiming for.
+.hp-step {
+  font-size: 22px;
+  color: #cccccc;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.05);
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+  }
+}
+
+// Mode + auto buttons ------------------------------------------------------
+
+.hp-modes {
+  margin-bottom: 14px;
+}
+
+.hp-mode {
+  font-size: 11px;
+  color: #888888;
+  padding: 4px 0;
+  border-radius: 5px;
+  background-color: rgba(255, 255, 255, 0.05);
+
+  &:hover { color: #ffffff; }
+
+  &.active {
+    color: #242424;
+    background-color: #e0af68;
+    font-weight: bold;
+  }
+}
+
+// The fan's auto button is narrower than a mode button, so give it a little
+// breathing room rather than letting the text touch the edges.
+.hp-fanrow .hp-mode {
+  padding: 4px 8px;
+}
+
+// Fan bar ------------------------------------------------------------------
+
+.hp-fanrow {
+  margin-bottom: 12px;
+}
+
+.hp-label {
+  font-size: 11px;
+  color: #888888;
+}
+
+.hp-seg {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.14);
+
+  &.filled { color: #7dcfff; }
+  &:hover  { color: #ffffff; }
+}
+
+.hp-fantext {
+  font-size: 11px;
+  color: #888888;
+  margin-left: 4px;
+}
+
+// Footer -------------------------------------------------------------------
+
+.hp-foot {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 8px;
+}
+
+.hp-dim {
+  font-size: 10px;
+  color: #6b6b6b;
+}
+
+.hp-fault {
+  font-size: 11px;
+  color: #f7768e;
+  margin-top: 6px;
+}
+
+.hp-down {
+  padding: 18px 0 10px 0;
+}
+
+.hp-downtext {
+  font-size: 11px;
+  color: #888888;
+}

@@ -27,9 +27,27 @@ Outdoor    5°C
 Fan        6/6
 Lifetime   1586.8 kWh
 
-click: power   scroll: setpoint
-right: fan     middle: fan auto
+click: panel   right: power
 ```
+
+## The panel
+
+Left click on the bar module opens an eww control panel: setpoint with big
+steppers, the current room temperature under it, mode buttons, a clickable
+fan bar, and outdoor temperature plus lifetime energy in the footer. Right
+click on the module still toggles power without opening anything.
+
+Files live in `eww/` and are symlinked into `~/.config/eww`, with
+`(include "heatpump.yuck")` in `eww.yuck` and `@import "heatpump";` in
+`eww.scss`. Everything is namespaced `.hp-*` because eww applies one
+stylesheet to every window.
+
+The panel's listener only runs while the window is open, so nothing polls the
+device the rest of the time. It reads through the same cache and flock as the
+waybar module rather than talking to the unit itself — two ECHONET pollers at
+once would steal each other's replies. Control actions patch the cache with
+the value they sent and touch a poke file that the listener watches, so a
+button press redraws immediately rather than waiting for the unit to catch up.
 
 ## Usage
 
@@ -71,11 +89,8 @@ what it finds, if you'd rather pin the address in the config file.
     "return-type": "json",
     "interval": 30,
     "signal": 12,
-    "on-click": "~/.config/waybar/heatpump-status.py toggle",
-    "on-scroll-up": "~/.config/waybar/heatpump-status.py warmer",
-    "on-scroll-down": "~/.config/waybar/heatpump-status.py cooler",
-    "on-click-right": "~/.config/waybar/heatpump-status.py fancycle",
-    "on-click-middle": "~/.config/waybar/heatpump-status.py fan auto",
+    "on-click": "~/.config/eww/heatpump-panel.sh",
+    "on-click-right": "~/.config/waybar/heatpump-status.py toggle",
     "tooltip": true
 }
 ```
@@ -86,15 +101,15 @@ is actually doing. Control commands invalidate the cache and push
 `SIGRTMIN+12` so the bar updates immediately instead of waiting out the poll
 interval.
 
-Left click toggles power, scroll changes the setpoint, right click cycles fan
-speed (auto → 1 → … → max → auto), middle click returns the fan to auto.
+Left click opens the panel, right click toggles power.
 
-Setpoint changes are clamped to 16–31°C. The device will happily accept 0–50
-over the wire; that range is a guard against a stray scroll setting something
-absurd. Note that scroll bindings on a bar module are easy to trigger by
-accident — a scroll gesture that happens to land on the module will walk the
-setpoint to one end of that range. If that bothers you, drop the two
-`on-scroll-*` lines and drive the setpoint from the CLI.
+Scroll bindings (`warmer`/`cooler` on `on-scroll-up`/`on-scroll-down`) were
+tried first and removed: a scroll gesture that happens to land on the module
+walks the setpoint to the end of its 16–31°C range, which in heat mode reads
+as the unit having switched off. The commands still exist for the CLI, they
+are just not worth binding to a wheel.
+
+Setpoint changes are clamped to 16–31°C; the device itself accepts 0–50.
 
 ## Fan speed
 

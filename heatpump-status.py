@@ -35,9 +35,15 @@ CACHE = os.path.join(RUNTIME, "waybar-heatpump.json")
 IPCACHE = os.path.join(RUNTIME, "waybar-heatpump.ip")
 LOCK = os.path.join(RUNTIME, "waybar-heatpump.lock")
 POKE = os.path.join(RUNTIME, "waybar-heatpump.poke")
+FAILS = os.path.join(RUNTIME, "waybar-heatpump.fails")
 CONF = os.path.expanduser("~/.config/waybar/heatpump.conf")
 
 CACHE_TTL = float(os.environ.get("HEATPUMP_CACHE_TTL", "20"))
+
+# Consecutive failed polls before the module leaves the bar entirely. One
+# dropped UDP datagram should not make it vanish and reappear, but there is no
+# point holding bar space for a unit that is not going to answer.
+HIDE_AFTER = int(os.environ.get("HEATPUMP_HIDE_AFTER", "2"))
 WAYBAR_SIGNAL = 12
 
 EPC_POWER, EPC_MODE, EPC_SETPOINT = 0x80, 0xB0, 0xB3
@@ -247,16 +253,79 @@ def emit(text, cls, tooltip=""):
     print(json.dumps({"text": text, "class": cls, "tooltip": tooltip}))
 
 
+def hidden():
+    """Waybar drops a custom module whose text is empty, which is what we
+    want when there is no heat pump to talk to."""
+    print(json.dumps({"text": "", "class": "hidden", "tooltip": ""}))
+
+
+def on_device_lan(ip):
+    """True if `ip` sits on an attached link.
+
+    Away from the house the unit is unreachable by definition, and finding
+    that out over the wire costs a 3s discovery timeout on every poll, so ask
+    the routing table instead. A route `via` a gateway means we are elsewhere.
+    """
+    try:
+        r = subprocess.run(["ip", "-4", "route", "get", ip],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except OSError:
+        return True          # no iproute2: fall back to trying for real
+    if r.returncode != 0:
+        return False
+    words = r.stdout.decode("utf-8", "replace").split()
+    return "dev" in words and "via" not in words
+
+
+def fail_streak(reset=False):
+    """Count consecutive failed polls, persisted because each poll is a fresh
+    process."""
+    if reset:
+        try:
+            os.remove(FAILS)
+        except OSError:
+            pass
+        return 0
+    n = 0
+    try:
+        with open(FAILS) as f:
+            n = int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        pass
+    n += 1
+    try:
+        with open(FAILS, "w") as f:
+            f.write(str(n))
+    except OSError:
+        pass
+    return n
+
+
+def unreachable(tooltip):
+    """Placeholder for the first failure or two, then out of the bar."""
+    if fail_streak() >= HIDE_AFTER:
+        hidden()
+    else:
+        emit("hp --", "unreachable", tooltip)
+
+
 def status():
+    conf_ip = os.environ.get("HEATPUMP_IP") or read_conf().get("ip")
+    if conf_ip and not on_device_lan(conf_ip):
+        fail_streak(reset=True)     # off the LAN is a clean state, not a fault
+        hidden()
+        return
+
     ip = device_ip()
-    if not ip:
-        emit("hp --", "unreachable", "No ECHONET Lite heat pump found")
+    if not ip or not on_device_lan(ip):
+        unreachable("No ECHONET Lite heat pump found")
         return
     try:
         st = cached_state(ip)
     except el.EchonetError as e:
-        emit("hp --", "unreachable", "%s: %s" % (ip, e))
+        unreachable("%s: %s" % (ip, e))
         return
+    fail_streak(reset=True)
 
     lines = ["Power      %s" % ("on" if st["on"] else "off")]
     if st["mode"]:
@@ -565,7 +634,7 @@ def main():
             sys.exit(__doc__)
     except el.EchonetError as e:
         if cmd == "status":
-            emit("hp --", "unreachable", str(e))
+            unreachable(str(e))
         else:
             sys.exit("error: %s" % e)
 

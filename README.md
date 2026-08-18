@@ -158,11 +158,29 @@ fan_max = 6
 the IP, so the minimal file is just an address.
 
 Environment variables override the file: `$HEATPUMP_IP`,
-`$HEATPUMP_FAN_MAX`, `$HEATPUMP_CACHE_TTL`.
+`$HEATPUMP_FAN_MAX`, `$HEATPUMP_CACHE_TTL`, `$HEATPUMP_HIDE_AFTER`.
+
+## Away from the heat pump
+
+The module takes no space in the bar when there is nothing to report. If the
+device address does not resolve to an attached link - you are on another
+network, or tethered - the module emits empty text and waybar drops it, with
+no packets sent and no discovery timeout to wait through. If you are on the
+right network but the unit does not answer, it shows `hp --` for one poll and
+then hides, so a single lost datagram does not make it flicker in and out.
+`$HEATPUMP_HIDE_AFTER` sets how many consecutive failed polls that takes
+(default 2); set it to 1 to hide on the first miss.
+
+It comes straight back on the next successful poll.
 
 Run `heatpump-status.py discover` to see what is on your network.
 
 ## Troubleshooting
+
+**Module is missing from the bar** - that is deliberate when the heat pump is
+off-network or not answering; see "Away from the heat pump" above. If it is
+missing while the unit is up, run `heatpump-status.py` by hand to see what it
+emits.
 
 **Module says `hp --` or "unreachable"** - the unit was not found. Run
 `discover` to check it is visible, and pin the IP in the config file if
